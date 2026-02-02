@@ -1,0 +1,6 @@
+streamlit>=1.40.0
+openai-whisper
+langchain
+langchain-ollama
+pydantic
+torch
