@@ -28,8 +28,11 @@ This module handles all "heavy lifting" and AI processing. It is designed to be 
 *   **Transcription**: Uses `openai-whisper` (Base model) to convert audio files into text.
     *   *Implementation*: Checks for a local `bin/` folder to add to the system PATH so FFmpeg can be found.
 *   **Intelligence**: Uses `langchain_ollama` to interface with the local Llama 3.2 model.
-    *   *Prompting*: A specific prompt instructs the LLM to act as a Business Analyst.
-    *   *Structured Output*: Uses Pydantic (`RequirementExtraction` class) to ensure the LLM returns a strict JSON list of requirements, preventing parsing errors.
+    *   *Prompting*: A specific prompt instructs the LLM to act as a Business Analyst, selecting an elicitation technique and justifying it.
+    *   *Structured Output*: Uses Pydantic (`RequirementExtraction` class) to ensure the LLM returns a strict JSON object containing:
+        *   `elicitation_technique`: The method used.
+        *   `justification`: Contextual reasoning.
+        *   `requirements`: List of requirements.
 
 ### B. `app/main.py` (Frontend)
 This is the Streamlit interface that the user interacts with.
