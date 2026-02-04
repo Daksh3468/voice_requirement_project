@@ -28,9 +28,9 @@ def add_log(msg):
 # Helper functions
 def check_ffmpeg():
     # 1. Check local bin
-    local_bin_ffmpeg = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "bin", "ffmpeg.exe")
-    if os.path.exists(local_bin_ffmpeg):
-        return True
+    # local_bin_ffmpeg = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "bin", "ffmpeg.exe")
+    # if os.path.exists(local_bin_ffmpeg):
+        # return True
     # 2. Check system PATH
     return shutil.which("ffmpeg") is not None
 
@@ -47,12 +47,12 @@ st.title("Voice Requirement AI")
 st.write("Professional requirement extraction from voice, audio, or text.")
 
 # --- Load Models ---
-@st.cache_resource(show_spinner="Loading AI engine... (this takes a moment)")
-def load_models():
-    add_log("System: Initializing Whisper...")
-    return get_whisper_model()
+# @st.cache_resource(show_spinner="Loading AI engine... (this takes a moment)")
+# def load_models():
+#     add_log("System: Initializing Whisper...")
+#     return get_whisper_model()
 
-whisper_model = load_models()
+# whisper_model = load_models()
 
 # --- Analysis Functions ---
 def run_audio_analysis(audio_bytes, ext):
@@ -74,8 +74,7 @@ def run_audio_analysis(audio_bytes, ext):
         
         try:
             status.write("⌛ Transcribing recording...")
-            transcript = transcribe_audio(tmp_path, model=whisper_model)
-            
+            whisper_model = get_whisper_model()             
             if not transcript or not transcript.strip():
                 st.session_state.error = "No speech detected. Please check your mic and try again."
                 status.update(label="❌ Silence Detected", state="error")

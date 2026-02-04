@@ -6,5 +6,7 @@ langchain-groq
 groq
 pydantic
 pydub
+torch
+ffmpeg-python
 
 

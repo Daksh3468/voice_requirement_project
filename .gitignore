@@ -1,14 +1,25 @@
 # Python
 __pycache__/
 *.pyc
-.venv/
+*.pyo
+*.pyd
+.Python
 env/
-
-# Streamlit secrets
-.streamlit/secrets.toml
-
-# Environment files
+venv/
 .env
+
+# Streamlit
+.streamlit/
 
 # OS
 .DS_Store
+
+# Project specific
+certs/
+bin/
+ffmpeg.zip
+ffmpeg_temp/
+*.tmp
+*.wav
+*.mp3
+*.mp4
