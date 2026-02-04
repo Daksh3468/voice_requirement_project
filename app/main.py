@@ -5,6 +5,13 @@ import shutil
 import subprocess
 import tempfile
 import os
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+dotenv_path = os.path.join(base_dir, ".env")
+load_dotenv(dotenv_path=dotenv_path)
+
 from logic import transcribe_audio, extract_requirements, get_whisper_model, MODEL_OLLAMA
 
 # 1. Page Config

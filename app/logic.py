@@ -51,13 +51,47 @@ def extract_requirements(transcript: str) -> RequirementExtraction:
     llm = ChatOllama(model=MODEL_OLLAMA, temperature=0.7)
     
     prompt = ChatPromptTemplate.from_template(
-        """You are an expert business analyst.
-        Analyze the following transcript to extract project requirements.
-        
-        1. Provide a Justification for the approach taken in analyzing this transcript.
-        2. Provide a clear list of key Information Gathering insights.
-        3. Extract a clear list of actionable Requirements.
-        
+        """You are a senior business analyst with expertise in analyzing stakeholder interviews and voice transcripts.
+
+        Analyze the following transcript and extract structured project requirements. 
+        The transcript may contain informal language, partial sentences, or ambiguous statements. 
+        Infer intent carefully and clearly state assumptions where needed.
+
+        Your analysis must include the following sections:
+
+        1. Justification of Analysis Approach
+        - Explain the methodology used to analyze the transcript
+        - Describe how ambiguity, implicit needs, or incomplete statements were interpreted
+        - Justify why certain requirements were inferred from the conversation
+
+        2. Information Gathering Insights
+        Extract key insights such as:
+        - Business goals or objectives
+        - User or stakeholder pain points
+        - Identified stakeholders or user roles
+        - Current process gaps or limitations
+        - High-level expectations or success criteria
+
+        3. Actionable Requirements
+        Provide a single, unified list of requirements derived from the transcript.
+
+        - Include functional behaviors, non-functional expectations, constraints, and   assumptions in ONE list.
+        - Prefix each requirement with a clear type label:
+            [Functional], [Non-Functional], [Constraint], or [Assumption]
+        - Write each requirement as a clear, testable statement.
+        - Avoid combining multiple ideas into one requirement.
+        - Clearly indicate inferred requirements using precise language.
+
+        Example format:
+        - [Functional] The system shall allow users to submit requirements via voice input.
+        - [Non-Functional] The system shall process voice input with low latency.
+        - [Constraint] The system must integrate with existing email infrastructure.
+        - [Assumption] It is assumed that users will have access to a microphone-enabled device.
+
+        Use clear bullet points and concise language.
+        Avoid speculation unless explicitly stated as an assumption.
+        Ensure the output is precise, structured, and implementation-ready.
+
         Transcript: "{transcript}"
         """
     )
@@ -269,8 +303,13 @@ def send_requirements_email(recipient: str, subject: str, reqs: RequirementExtra
     msg = EmailMessage()
     msg["From"] = sender
     msg["To"] = recipient
-    
     msg["Subject"] = subject
+    
+    if not sender or not password:
+        raise RuntimeError("Email configuration missing. Please check your .env file for EMAIL_SENDER and EMAIL_PASSWORD.")
+    
+    # Sanitize password (remove spaces often found in Google App Passwords)
+    password = password.replace(" ", "")
 
     # 1. Plain Text Version (Primary content)
     text_content = f"Project Requirements Report\n\n"
