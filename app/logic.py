@@ -45,15 +45,25 @@ def transcribe_audio(file_path: str, model=None) -> str:
     except Exception as e:
         raise RuntimeError(f"Transcription failed: {e}")
 
+def get_llm():
+    """
+    Lazily initializes the Groq LLM.
+    Safe for Streamlit Cloud startup.
+    """
+    try:
+        return ChatGroq(
+            model="llama-3.3-70b-versatile",
+            temperature=0.7,
+            api_key=st.secrets["GROQ_API_KEY"]
+        )
+    except KeyError:
+        raise RuntimeError("GROQ_API_KEY not found in Streamlit Secrets")
+
 def extract_requirements(transcript: str) -> RequirementExtraction:
     """
     Extracts requirements using Ollama (Llama 3.2).
     """
-    llm = ChatGroq(
-        model=MODEL_GROQ,
-        temperature=0.7,
-        api_key=st.secrets["GROQ_API_KEY"]
-    )
+    llm = get_llm()
     
     prompt = ChatPromptTemplate.from_template(
         """You are a senior business analyst with expertise in analyzing stakeholder interviews and voice transcripts.
