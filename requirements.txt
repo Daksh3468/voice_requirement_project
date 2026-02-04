@@ -1,7 +1,10 @@
 streamlit>=1.40.0
 openai-whisper
 langchain
-langchain-ollama
+langchain-core
+langchain-groq
+groq
 pydantic
-torch
-python-dotenv
+pydub
+
+

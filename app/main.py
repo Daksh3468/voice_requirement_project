@@ -5,14 +5,8 @@ import shutil
 import subprocess
 import tempfile
 import os
-from dotenv import load_dotenv
 
-# Load environment variables from .env file
-base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-dotenv_path = os.path.join(base_dir, ".env")
-load_dotenv(dotenv_path=dotenv_path)
-
-from logic import transcribe_audio, extract_requirements, get_whisper_model, MODEL_OLLAMA
+from logic import transcribe_audio, extract_requirements, get_whisper_model
 
 # 1. Page Config
 st.set_page_config(
@@ -39,20 +33,6 @@ def check_ffmpeg():
         return True
     # 2. Check system PATH
     return shutil.which("ffmpeg") is not None
-
-def check_ollama():
-    try:
-        requests.get("http://localhost:11434", timeout=1)
-        return True
-    except:
-        return False
-
-def check_model():
-    try:
-        resp = requests.post("http://localhost:11434/api/show", json={"name": MODEL_OLLAMA}, timeout=2)
-        return resp.status_code == 200
-    except:
-        return False
 
 # Styling
 st.markdown("""
@@ -157,18 +137,16 @@ with tab_text:
 # --- Sidebar ---
 with st.sidebar:
     st.header("⚙️ System Status")
+
     f_ok = check_ffmpeg()
-    o_ok = check_ollama()
-    m_ok = check_model()
-    
-    st.metric("Audio Engine", "✅ OK" if f_ok else "❌ Missing")
-    st.metric("Ollama AI", "✅ OK" if o_ok else "❌ Offline")
-    st.metric("Llama 3.2 Model", "✅ OK" if m_ok else "❌ Missing")
-    
-    if not m_ok and o_ok:
-        st.warning(f"⚠️ **Model Missing**: run `ollama pull {MODEL_OLLAMA}` in your terminal.")
-    
-    
+    llm_ok = "GROQ_API_KEY" in st.secrets
+
+    st.metric("Audio Engine (FFmpeg)", "✅ OK" if f_ok else "❌ Missing")
+    st.metric("LLM Engine (Groq)", "✅ Ready" if llm_ok else "❌ API Key Missing")
+
+    if not llm_ok:
+        st.error("Missing GROQ_API_KEY in Streamlit Secrets")
+
     st.divider()
     with st.expander("🤔 Microphone Troubleshooting"):
         st.markdown("""

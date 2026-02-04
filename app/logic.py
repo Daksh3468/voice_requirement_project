@@ -1,15 +1,16 @@
 import os
 import smtplib
+import streamlit as st
 from email.message import EmailMessage
 import whisper
-from langchain_ollama import ChatOllama
+from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
 from pydantic import BaseModel, Field
 from typing import List, Any
 
 # --- Configuration ---
 MODEL_WHISPER = "base"
-MODEL_OLLAMA = "llama3.2"
+MODEL_GROQ = "llama-3.1-8b-instant"
 
 # --- Setup Environment ---
 # Add local 'bin' folder to PATH for FFmpeg if it exists
@@ -48,7 +49,11 @@ def extract_requirements(transcript: str) -> RequirementExtraction:
     """
     Extracts requirements using Ollama (Llama 3.2).
     """
-    llm = ChatOllama(model=MODEL_OLLAMA, temperature=0.7)
+    llm = ChatGroq(
+        model=MODEL_GROQ,
+        temperature=0.7,
+        api_key=st.secrets["GROQ_API_KEY"]
+    )
     
     prompt = ChatPromptTemplate.from_template(
         """You are a senior business analyst with expertise in analyzing stakeholder interviews and voice transcripts.
