@@ -2,11 +2,10 @@ import os
 import smtplib
 import streamlit as st
 from email.message import EmailMessage
-import whisper
 from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
 from pydantic import BaseModel, Field
-from typing import List, Any
+from typing import List
 
 # --- Configuration ---
 MODEL_WHISPER = "base"
@@ -30,6 +29,7 @@ def get_whisper_model():
     """
     Loads the Whisper model and caches it to avoid redundant loads.
     """
+    import whisper
     return whisper.load_model(MODEL_WHISPER)
 
 def transcribe_audio(file_path: str, model=None) -> str:
