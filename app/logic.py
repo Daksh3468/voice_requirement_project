@@ -352,3 +352,65 @@ def send_requirements_email(recipient: str, subject: str, reqs: RequirementExtra
             server.send_message(msg)
     except Exception as e:
         raise RuntimeError(f"Email failed: {e}")
+
+# -------------------------Scan Email Code-----------------------------
+
+import imaplib
+import email
+from email.header import decode_header
+from bs4 import BeautifulSoup
+
+def fetch_email_requirements(
+    sender_email: str,
+    password: str,
+    max_emails: int = 5,
+    unread_only: bool = True
+) -> list[str]:
+    """
+    Fetches recent emails and extracts text content for requirement analysis.
+    Returns a list of email bodies.
+    """
+
+    if not sender_email or not password:
+        raise RuntimeError("Email credentials missing")
+
+    password = password.replace(" ", "")
+
+    mail = imaplib.IMAP4_SSL("imap.gmail.com")
+    mail.login(sender_email, password)
+    mail.select("inbox")
+
+    search_criteria = "(UNSEEN)" if unread_only else "ALL"
+    status, messages = mail.search(None, search_criteria)
+
+    if status != "OK":
+        raise RuntimeError("Failed to search inbox")
+
+    email_ids = messages[0].split()[-max_emails:]
+    extracted_texts = []
+
+    for eid in email_ids:
+        _, msg_data = mail.fetch(eid, "(RFC822)")
+        raw_email = msg_data[0][1]
+        msg = email.message_from_bytes(raw_email)
+
+        body_text = ""
+
+        if msg.is_multipart():
+            for part in msg.walk():
+                content_type = part.get_content_type()
+                if content_type == "text/plain":
+                    body_text = part.get_payload(decode=True).decode(errors="ignore")
+                    break
+                elif content_type == "text/html":
+                    html = part.get_payload(decode=True).decode(errors="ignore")
+                    soup = BeautifulSoup(html, "html.parser")
+                    body_text = soup.get_text()
+        else:
+            body_text = msg.get_payload(decode=True).decode(errors="ignore")
+
+        if body_text.strip():
+            extracted_texts.append(body_text.strip())
+
+    mail.logout()
+    return extracted_texts

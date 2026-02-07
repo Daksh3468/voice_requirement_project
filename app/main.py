@@ -111,7 +111,7 @@ def run_text_analysis(text):
             status.update(label="❌ Analysis Failed", state="error")
 
 # --- UI Layout ---
-tab_record, tab_upload, tab_text = st.tabs(["🎙️ Record", "📂 Upload", "📧 Text"])
+tab_record, tab_upload, tab_text, tab_email = st.tabs(["🎙️ Record", "📂 Upload", "📧 Text","📥 Email Inbox"])
 
 with tab_record:
     audio_val = st.audio_input("Record your voice")
@@ -134,48 +134,83 @@ with tab_text:
         else:
             st.warning("Please paste some text first.")
 
+with tab_email:
+    st.subheader("📥 Scan Email for Requirements")
+
+    max_emails = st.slider("Emails to scan", 1, 10, 3)
+    unread_only = st.checkbox("Unread emails only", value=True)
+
+    if st.button("📡 Fetch & Analyze Emails", type="primary"):
+        from logic import fetch_email_requirements
+
+        try:
+            with st.status("📨 Reading Inbox...", expanded=True) as status:
+                emails = fetch_email_requirements(
+                    sender_email=os.getenv("EMAIL_SENDER"),
+                    password=os.getenv("EMAIL_PASSWORD"),
+                    max_emails=max_emails,
+                    unread_only=unread_only
+                )
+
+                if not emails:
+                    st.warning("No suitable emails found.")
+                    status.update(state="complete")
+                    st.stop()
+
+                combined_text = "\n\n---\n\n".join(emails)
+
+                status.write("🧠 Extracting requirements from emails...")
+                reqs = extract_requirements(combined_text)
+
+                st.session_state.transcript = combined_text
+                st.session_state.requirements = reqs
+                status.update(label="✅ Email Analysis Complete", state="complete")
+
+        except Exception as e:
+            st.error(f"❌ Email scan failed: {e}")
+
 # --- Sidebar ---
-with st.sidebar:
-    st.header("⚙️ System Status")
+# with st.sidebar:
+#     st.header("⚙️ System Status")
 
-    f_ok = check_ffmpeg()
-    llm_ok = "GROQ_API_KEY" in st.secrets
+#     f_ok = check_ffmpeg()
+#     llm_ok = "GROQ_API_KEY" in st.secrets
 
-    st.metric("Audio Engine (FFmpeg)", "✅ OK" if f_ok else "❌ Missing")
-    st.metric("LLM Engine (Groq)", "✅ Ready" if llm_ok else "❌ API Key Missing")
+#     st.metric("Audio Engine (FFmpeg)", "✅ OK" if f_ok else "❌ Missing")
+#     st.metric("LLM Engine (Groq)", "✅ Ready" if llm_ok else "❌ API Key Missing")
 
-    if not llm_ok:
-        st.error("Missing GROQ_API_KEY in Streamlit Secrets")
+#     if not llm_ok:
+#         st.error("Missing GROQ_API_KEY in Streamlit Secrets")
 
-    st.divider()
-    with st.expander("🤔 Microphone Troubleshooting"):
-        st.markdown("""
-        **Network Mic Issues?** 
-        Browsers block mics on HTTP network IPs. We have enabled **Built-in HTTPS**:
+#     st.divider()
+#     with st.expander("🤔 Microphone Troubleshooting"):
+#         st.markdown("""
+#         **Network Mic Issues?** 
+#         Browsers block mics on HTTP network IPs. We have enabled **Built-in HTTPS**:
         
-        1. **Built-in HTTPS (Current)**
-           - Your app is now running on `https://`.
-           - **Note:** You will see a "Not Secure" warning (Self-signed). 
-           - Click **Advanced** -> **Proceed** to allow mic access.
+#         1. **Built-in HTTPS (Current)**
+#            - Your app is now running on `https://`.
+#            - **Note:** You will see a "Not Secure" warning (Self-signed). 
+#            - Click **Advanced** -> **Proceed** to allow mic access.
         
-        2. **Alternative: Ngrok**
-           - `ngrok http 8501`
-           - Use the provided `https://` link for a "Clean" certificate.
+#         2. **Alternative: Ngrok**
+#            - `ngrok http 8501`
+#            - Use the provided `https://` link for a "Clean" certificate.
         
-        3. **Chrome Workaround**
-           - Go to: `chrome://flags/#unsafely-treat-insecure-origin-as-secure`
-           - **Enable** & add `http://YOUR_IP:8501`
-           - Relaunch browser.
-        """)
+#         3. **Chrome Workaround**
+#            - Go to: `chrome://flags/#unsafely-treat-insecure-origin-as-secure`
+#            - **Enable** & add `http://YOUR_IP:8501`
+#            - Relaunch browser.
+#         """)
 
-    st.subheader("📜 Activity Log")
-    for log in reversed(st.session_state.logs):
-        st.caption(f"- {log}")
+#     st.subheader("📜 Activity Log")
+#     for log in reversed(st.session_state.logs):
+#         st.caption(f"- {log}")
     
-    if st.button("🗑️ Reset All"):
-        st.session_state.clear()
-        st.cache_data.clear()
-        st.rerun()
+#     if st.button("🗑️ Reset All"):
+#         st.session_state.clear()
+#         st.cache_data.clear()
+#         st.rerun()
 
 # --- Display Results ---
 if st.session_state.error:
