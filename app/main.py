@@ -3,7 +3,7 @@ import shutil
 import tempfile
 import os
 
-from logic import transcribe_audio, extract_requirements, get_whisper_model
+from logic import transcribe_audio, extract_requirements, get_whisper_model, analyze_and_improve_requirements
 
 # st.set_page_config(page_title="Health Check")
 # st.title("✅ Health Check Passed")
@@ -19,8 +19,14 @@ st.set_page_config(
 # --- Session State Management ---
 if "transcript" not in st.session_state: st.session_state.transcript = None
 if "requirements" not in st.session_state: st.session_state.requirements = None
+if "improved_requirements" not in st.session_state: st.session_state.improved_requirements = None
+if "analysis_questions" not in st.session_state: st.session_state.analysis_questions = None
+if "question_answers" not in st.session_state: st.session_state.question_answers = {}
+if "general_feedback" not in st.session_state: st.session_state.general_feedback = ""
+if "extraction_model" not in st.session_state: st.session_state.extraction_model = "llama-3.3-70b-versatile"
 if "error" not in st.session_state: st.session_state.error = None
 if "logs" not in st.session_state: st.session_state.logs = []
+if "show_improved" not in st.session_state: st.session_state.show_improved = False
 
 def add_log(msg):
     st.session_state.logs.append(msg)
@@ -60,6 +66,10 @@ def run_audio_analysis(audio_bytes, ext):
     """Explicitly triggers the full audio analysis pipe."""
     add_log("User: Started audio analysis")
     st.session_state.requirements = None
+    st.session_state.improved_requirements = None
+    st.session_state.analysis_questions = None
+    st.session_state.user_feedback = ""
+    st.session_state.show_improved = False
     st.session_state.transcript = None
     st.session_state.error = None
     
@@ -75,15 +85,17 @@ def run_audio_analysis(audio_bytes, ext):
         
         try:
             status.write("⌛ Transcribing recording...")
-            whisper_model = get_whisper_model()             
+            whisper_model = get_whisper_model()
+            from logic import transcribe_audio
+            transcript = transcribe_audio(tmp_path, whisper_model)
             if not transcript or not transcript.strip():
                 st.session_state.error = "No speech detected. Please check your mic and try again."
                 status.update(label="❌ Silence Detected", state="error")
                 return
             
             st.session_state.transcript = transcript
-            status.write("🧠 Extracting structured requirements...")
-            reqs = extract_requirements(transcript)
+            status.write(f"🧠 Extracting requirements using {st.session_state.extraction_model}...")
+            reqs = extract_requirements(transcript, st.session_state.extraction_model)
             st.session_state.requirements = reqs
             status.update(label="✅ Analysis Success", state="complete")
             add_log("System: Analysis complete")
@@ -97,18 +109,54 @@ def run_text_analysis(text):
     """Explicitly triggers text analysis."""
     add_log("User: Started text analysis")
     st.session_state.requirements = None
+    st.session_state.improved_requirements = None
+    st.session_state.analysis_questions = None
+    st.session_state.user_feedback = ""
+    st.session_state.show_improved = False
     st.session_state.transcript = None
     st.session_state.error = None
 
     with st.status("🧠 Analyzing Text...", expanded=True) as status:
         try:
-            reqs = extract_requirements(text)
+            reqs = extract_requirements(text, st.session_state.extraction_model)
             st.session_state.transcript = text
             st.session_state.requirements = reqs
             status.update(label="✅ Analysis Complete", state="complete")
         except Exception as e:
             st.session_state.error = str(e)
             status.update(label="❌ Analysis Failed", state="error")
+
+# --- Sidebar Settings ---
+with st.sidebar:
+    st.header("⚙️ LLM Configuration")
+    
+    available_models = [
+        "llama-3.3-70b-versatile",
+        "llama-3.1-8b-instant",
+    ]
+    
+    st.session_state.extraction_model = st.selectbox(
+        "Requirement Extraction Model",
+        available_models,
+        index=0,
+        help="Model used to extract initial requirements from transcript/text."
+    )
+    
+    st.session_state.analysis_model = st.selectbox(
+        "Deep Analysis Model",
+        available_models,
+        index=0,
+        help="Higher tier model recommended for gap analysis."
+    )
+    
+    st.divider()
+    st.subheader("📡 Connection Status")
+    llm_ok = "GROQ_API_KEY" in st.secrets
+    st.metric("Groq API", "✅ Ready" if llm_ok else "❌ Missing")
+    
+    if st.button("🗑️ Reset All"):
+        st.session_state.clear()
+        st.rerun()
 
 # --- UI Layout ---
 tab_record, tab_upload, tab_text, tab_email = st.tabs(["🎙️ Record", "📂 Upload", "📧 Text","📥 Email Inbox"])
@@ -159,8 +207,8 @@ with tab_email:
 
                 combined_text = "\n\n---\n\n".join(emails)
 
-                status.write("🧠 Extracting requirements from emails...")
-                reqs = extract_requirements(combined_text)
+                status.write(f"🧠 Extracting requirements using {st.session_state.extraction_model}...")
+                reqs = extract_requirements(combined_text, st.session_state.extraction_model)
 
                 st.session_state.transcript = combined_text
                 st.session_state.requirements = reqs
@@ -231,21 +279,143 @@ if st.session_state.requirements:
 
     st.subheader("📋 Extracted Requirements")
     req_list = "\n".join([f"{idx+1}. {r}" for idx, r in enumerate(reqs.requirements)])
-    st.success(f"**Functional Requirements:**\n\n{req_list}")
+    st.success(f"**Functional & Non-Functional Requirements:**\n\n{req_list}")
 
+    # --- NEW: Interactive Analyze & Improve Button ---
+    st.divider()
+    
+    if not st.session_state.analysis_questions and not st.session_state.improved_requirements:
+        if st.button("🔍 Analyze & Find Gaps", type="primary"):
+            from logic import generate_clarification_questions
+            with st.status(f"🧠 Deep Gap Analysis via {st.session_state.analysis_model}...", expanded=True) as status:
+                try:
+                    questions = generate_clarification_questions(reqs.requirements, st.session_state.analysis_model)
+                    st.session_state.analysis_questions = questions
+                    status.update(label="✅ Analysis Complete - Questions Generated", state="complete")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Analysis failed: {e}")
+                    status.update(label="❌ Analysis Failed", state="error")
+
+    # --- Display Questions & Collect Feedback ---
+    if st.session_state.analysis_questions and not st.session_state.improved_requirements:
+        st.subheader("🤔 Clarifying Questions")
+        st.info("The AI identified some potential gaps. Please answer each question below.")
+        
+        # Individual answer fields for each question
+        for idx, q in enumerate(st.session_state.analysis_questions.questions):
+            st.markdown(f"**Q{idx+1}: {q.question}**")
+            st.caption(f"*Context: {q.context}*")
+            
+            # Use a unique key for each question's answer
+            answer_key = f"answer_{idx}"
+            if answer_key not in st.session_state.question_answers:
+                st.session_state.question_answers[answer_key] = ""
+            
+            st.session_state.question_answers[answer_key] = st.text_area(
+                f"Your answer to Q{idx+1}:",
+                value=st.session_state.question_answers[answer_key],
+                height=100,
+                key=f"q_{idx}_input",
+                placeholder="Provide your answer or clarification here..."
+            )
+            st.divider()
+        
+        # General feedback field
+        st.markdown("**Additional Feedback (Optional)**")
+        st.session_state.general_feedback = st.text_area(
+            "Any additional comments or requirements:",
+            value=st.session_state.general_feedback,
+            height=150,
+            placeholder="e.g., Additional features, constraints, or clarifications not covered above..."
+        )
+        
+        col_gen, col_cancel = st.columns(2)
+        with col_gen:
+            if st.button("🚀 Generate Final Requirements", type="primary"):
+                from logic import finalize_improved_requirements
+                with st.status("🧠 Incorporating feedback & generating final set...", expanded=True) as status:
+                    try:
+                        # Combine all answers and general feedback
+                        combined_feedback = ""
+                        for idx, q in enumerate(st.session_state.analysis_questions.questions):
+                            answer = st.session_state.question_answers.get(f"answer_{idx}", "")
+                            combined_feedback += f"Q: {q.question}\nA: {answer}\n\n"
+                        
+                        if st.session_state.general_feedback.strip():
+                            combined_feedback += f"Additional Feedback:\n{st.session_state.general_feedback}"
+                        
+                        improved = finalize_improved_requirements(
+                            reqs.requirements, 
+                            combined_feedback, 
+                            st.session_state.analysis_model
+                        )
+                        st.session_state.improved_requirements = improved
+                        st.session_state.show_improved = True
+                        status.update(label="✅ Final Requirements Generated", state="complete")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Generation failed: {e}")
+                        status.update(label="❌ Generation Failed", state="error")
+        with col_cancel:
+            if st.button("Cancel"):
+                st.session_state.analysis_questions = None
+                st.session_state.question_answers = {}
+                st.session_state.general_feedback = ""
+                st.rerun()
+
+    # --- Display Improved Results ---
+    if st.session_state.improved_requirements:
+        imp = st.session_state.improved_requirements
+        st.subheader("🚀 Improved & Merged Requirements")
+        
+        with st.expander("🚩 Identified Gaps & Missing Requirements", expanded=True):
+            for gap in imp.gaps:
+                st.markdown(f"- {gap}")
+        
+        improved_list = "\n".join([f"{idx+1}. {r}" for idx, r in enumerate(imp.improved_requirements)])
+        st.success(f"**Merged Final Requirements:**\n\n{improved_list}")
+
+        if st.button("🔙 Back to Original / Re-Analyze"):
+            st.session_state.improved_requirements = None
+            st.session_state.analysis_questions = None
+            st.session_state.question_answers = {}
+            st.session_state.general_feedback = ""
+            st.session_state.show_improved = False
+            st.rerun()
+
+    current_reqs = st.session_state.improved_requirements.improved_requirements if st.session_state.improved_requirements else reqs.requirements
+    current_req_list = "\n".join([f"{idx+1}. {r}" for idx, r in enumerate(current_reqs)])
+    
     st.divider()
     st.subheader("📤 Export Options")
     col1, col2 = st.columns(2)
     with col1:
-        doc = f"REPORT\n\nApproach:\n{reqs.justification}\n\nRequirements:\n{req_list}"
+        doc = f"REPORT\n\nApproach:\n{reqs.justification}\n\nRequirements:\n{current_req_list}"
         st.download_button("⬇️ Download (.txt)", doc, "requirements.txt", use_container_width=True)
     with col2:
         with st.expander("📧 Email Report"):
             email = st.text_input("Recipient")
             if st.button("Send Now", use_container_width=True):
-                from logic import send_requirements_email
+                from logic import send_requirements_email, RequirementExtraction
                 try:
-                    send_requirements_email(email, "AI Requirement Report", reqs, os.getenv("EMAIL_SENDER"), os.getenv("EMAIL_PASSWORD"))
+                    # Create a dummy RequirementExtraction object for the email function if using improved ones
+                    # or update send_requirements_email to handle both.
+                    # For simplicity, let's just send the text report if improved version is used, 
+                    # or adapt the pydantic object.
+                    
+                    # Ideally, we'd update logic.py to handle ImprovedRequirements in email too.
+                    # But if we want to reuse the existing HTML template, we can wrap improved into a Extraction object.
+                    
+                    report_to_send = reqs
+                    if st.session_state.improved_requirements:
+                        report_to_send = RequirementExtraction(
+                            justification="Merged & Improved Requirements Analysis",
+                            information_gathering=reqs.information_gathering,
+                            requirements=st.session_state.improved_requirements.improved_requirements
+                        )
+                    
+                    send_requirements_email(email, "AI Requirement Report", report_to_send, os.getenv("EMAIL_SENDER"), os.getenv("EMAIL_PASSWORD"))
                     st.success("✅ Sent!")
                 except Exception as e:
                     st.error(f"❌ Failed: {e}")

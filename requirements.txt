@@ -8,5 +8,4 @@ pydantic
 pydub
 torch
 ffmpeg-python
-
-
+beautifulsoup4

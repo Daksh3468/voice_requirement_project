@@ -24,6 +24,17 @@ class RequirementExtraction(BaseModel):
     information_gathering: List[str] = Field(description="List of key information points gathered during the elicitation process")
     requirements: List[str] = Field(description="List of extracted functional and non-functional requirements")
 
+class ImprovedRequirements(BaseModel):
+    gaps: List[str] = Field(description="List of identified gaps, missing features, or ambiguities in the original requirements")
+    improved_requirements: List[str] = Field(description="The complete high-quality list of requirements (Original + New improvements merged)")
+
+class AnalysisQuestion(BaseModel):
+    question: str = Field(description="Clarifying question for the user")
+    context: str = Field(description="Why this question is being asked (e.g., specific gap found)")
+
+class AnalysisQuestions(BaseModel):
+    questions: List[AnalysisQuestion] = Field(description="List of clarifying questions to improve requirements")
+
 # --- Model Loading (Cached) ---
 def get_whisper_model():
     """
@@ -45,25 +56,24 @@ def transcribe_audio(file_path: str, model=None) -> str:
     except Exception as e:
         raise RuntimeError(f"Transcription failed: {e}")
 
-def get_llm():
+def get_llm(model_name: str = "llama-3.3-70b-versatile"):
     """
-    Lazily initializes the Groq LLM.
-    Safe for Streamlit Cloud startup.
+    Lazily initializes the Groq LLM with a specific model.
     """
     try:
         return ChatGroq(
-            model="llama-3.3-70b-versatile",
+            model=model_name,
             temperature=0.7,
             api_key=st.secrets["GROQ_API_KEY"]
         )
     except KeyError:
         raise RuntimeError("GROQ_API_KEY not found in Streamlit Secrets")
 
-def extract_requirements(transcript: str) -> RequirementExtraction:
+def extract_requirements(transcript: str, model_name: str = "llama-3.3-70b-versatile") -> RequirementExtraction:
     """
-    Extracts requirements using Ollama (Llama 3.2).
+    Extracts requirements using the specified Groq model.
     """
-    llm = get_llm()
+    llm = get_llm(model_name)
     
     prompt = ChatPromptTemplate.from_template(
         """You are a senior business analyst with expertise in analyzing stakeholder interviews and voice transcripts.
@@ -88,11 +98,11 @@ def extract_requirements(transcript: str) -> RequirementExtraction:
         - High-level expectations or success criteria
 
         3. Actionable Requirements
-        Provide a single, unified list of requirements derived from the transcript.
+        Provide a single, unified list of important requirements derived from the transcript.
 
-        - Include functional behaviors, non-functional expectations, constraints, and   assumptions in ONE list.
+        - Include functional behaviors, non-functional expectations in list.
         - Prefix each requirement with a clear type label:
-            [Functional], [Non-Functional], [Constraint], or [Assumption]
+            [Functional] or [Non-Functional]
         - Write each requirement as a clear, testable statement.
         - Avoid combining multiple ideas into one requirement.
         - Clearly indicate inferred requirements using precise language.
@@ -100,8 +110,6 @@ def extract_requirements(transcript: str) -> RequirementExtraction:
         Example format:
         - [Functional] The system shall allow users to submit requirements via voice input.
         - [Non-Functional] The system shall process voice input with low latency.
-        - [Constraint] The system must integrate with existing email infrastructure.
-        - [Assumption] It is assumed that users will have access to a microphone-enabled device.
 
         Use clear bullet points and concise language.
         Avoid speculation unless explicitly stated as an assumption.
@@ -121,6 +129,108 @@ def extract_requirements(transcript: str) -> RequirementExtraction:
     except Exception as e:
         # Fallback handling could go here, but raising for UI to catch is fine
         raise RuntimeError(f"LLM extraction failed: {e}")
+
+def analyze_and_improve_requirements(original_reqs: List[str], model_name: str = "llama-3.1-8b-instant") -> ImprovedRequirements:
+    """
+    Analyzes the original requirements, finds gaps, and generates an improved merged list.
+    """
+    llm = get_llm(model_name)
+    
+    # Format the requirements for the prompt
+    reqs_text = "\n".join(original_reqs)
+    
+    prompt = ChatPromptTemplate.from_template(
+        """You are a senior requirements engineer and quality assurance expert.
+        
+        Your task is to review the following set of requirements and perform a deep gap analysis.
+        
+        Original Requirements:
+        {requirements}
+        
+        Perform the following:
+        1. Identify missing functional requirements that are logically expected based on the existing ones (e.g., if there's a 'login', is there a 'logout' or 'password reset'?).
+        2. Identify missing non-functional requirements (security, performance, scalability, usability).
+        3. Find ambiguities or vague statements in the original set.
+        4. Generate a 'Gaps' list summarizing these findings.
+        5. Provide a final 'Improved Requirements' list which is a MERGED and REFINED version of the original requirements plus the new ones you identified.
+        
+        Rules:
+        - Keep the [Functional] and [Non-Functional] labels.
+        - Ensure every original requirement is preserved but can be rephrased for better clarity.
+        - The final list must be comprehensive and implementation-ready.
+        
+        Your output must follow the structured format.
+        """
+    )
+    
+    structured_llm = llm.with_structured_output(ImprovedRequirements)
+    chain = prompt | structured_llm
+    
+    try:
+        result = chain.invoke({"requirements": reqs_text})
+        return result
+    except Exception as e:
+        raise RuntimeError(f"Requirement improvement failed: {e}")
+
+def generate_clarification_questions(original_reqs: List[str], model_name: str = "llama-3.3-70b-versatile") -> AnalysisQuestions:
+    """
+    Analyzes original requirements and generates clarifying questions to fill gaps.
+    """
+    llm = get_llm(model_name)
+    reqs_text = "\n".join(original_reqs)
+    
+    prompt = ChatPromptTemplate.from_template(
+        """You are a senior business analyst. Review these requirements and find gaps, missing edge cases, or ambiguities.
+        
+        Original Requirements:
+        {requirements}
+        
+        Generate between 5-10 focused, professional clarifying questions for the stakeholder to help make these requirements complete and implementation-ready.
+        Each question should be tied to a specific gap or ambiguity you've identified.
+        """
+    )
+    
+    structured_llm = llm.with_structured_output(AnalysisQuestions)
+    chain = prompt | structured_llm
+    
+    try:
+        return chain.invoke({"requirements": reqs_text})
+    except Exception as e:
+        raise RuntimeError(f"Question generation failed: {e}")
+
+def finalize_improved_requirements(original_reqs: List[str], user_feedback: str, model_name: str = "llama-3.3-70b-versatile") -> ImprovedRequirements:
+    """
+    Generates improved requirements by merging original ones with user feedback.
+    """
+    llm = get_llm(model_name)
+    reqs_text = "\n".join(original_reqs)
+    
+    prompt = ChatPromptTemplate.from_template(
+        """You are a senior requirements engineer.
+        
+        Original Requirements:
+        {requirements}
+        
+        User Feedback/Clarifications:
+        {feedback}
+        
+        Generate a final, comprehensive, and high-quality list of requirements.
+        - Merge the original requirements with the new information provided in the feedback.
+        - Resolve any ambiguities mentioned in the feedback.
+        - Use [Functional] and [Non-Functional] labels.
+        - Ensure the output is implementation-ready.
+        
+        Produce a list of 'gaps' you solved and the final 'improved_requirements' list.
+        """
+    )
+    
+    structured_llm = llm.with_structured_output(ImprovedRequirements)
+    chain = prompt | structured_llm
+    
+    try:
+        return chain.invoke({"requirements": reqs_text, "feedback": user_feedback})
+    except Exception as e:
+        raise RuntimeError(f"Final requirement generation failed: {e}")
 
 def format_requirements_html(reqs: RequirementExtraction) -> str:
     """
